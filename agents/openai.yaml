@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rabbit Hole"
+  short_description: "Always-on focus guard for drift, loops and fatigue"
+  default_prompt: "Use $rabbit-hole for this whole session: one intake question, then stay silent until a drift, loop or fatigue signal trips."

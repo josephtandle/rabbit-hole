@@ -1,0 +1,8 @@
+{
+  "mission": "",
+  "strictness": "mid",
+  "cadenceMinutes": 15,
+  "quietHours": { "start": "23:00", "end": "06:00" },
+  "timezone": "",
+  "parkingLot": "PARKING-LOT.md"
+}

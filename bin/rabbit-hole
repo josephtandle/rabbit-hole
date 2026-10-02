@@ -1,0 +1,168 @@
+#!/usr/bin/env node
+'use strict';
+// Rabbit Hole CLI. Node builtins only.
+const fs = require('fs');
+const path = require('path');
+const c = require('../lib/common');
+
+const args = process.argv.slice(2);
+const cmd = args.shift() || 'help';
+
+function flag(name) {
+  const i = args.indexOf(name);
+  if (i === -1) return undefined;
+  const v = args[i + 1];
+  args.splice(i, v === undefined ? 1 : 2);
+  return v === undefined ? true : v;
+}
+
+function stamp(d) {
+  d = d || new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+
+function pickSession(id) {
+  if (id) return c.loadSession(id, new Date());
+  return c.latestSession();
+}
+
+function fmtDuration(mins) {
+  if (mins < 60) return mins + ' min';
+  return Math.floor(mins / 60) + ' h ' + (mins % 60) + ' min';
+}
+
+const commands = {
+  park() {
+    const sessionId = flag('--session');
+    const text = args.join(' ').trim();
+    if (!text) return fail('usage: rabbit-hole park "<idea or tangent>"');
+    const cfg = c.loadConfig();
+    const file = c.parkingLotPath(cfg, process.cwd());
+    const fresh = !fs.existsSync(file);
+    c.ensureDir(path.dirname(file));
+    fs.appendFileSync(file, (fresh ? '# Parking lot\n\nIdeas and tangents parked by Rabbit Hole. Pick them up on purpose, not by accident.\n\n' : '') + '- [' + stamp() + '] ' + text + '\n');
+    const s = pickSession(sessionId);
+    c.appendLog({ session: s ? s.id : null, kind: 'park', detail: { text, file } });
+    const mission = (s && s.mission) || cfg.mission;
+    console.log('Parked: ' + text);
+    console.log('File: ' + file);
+    if (mission) console.log('Back to: ' + mission);
+  },
+
+  mission() {
+    const strictness = flag('--strictness');
+    const sessionId = flag('--session');
+    const text = args.join(' ').trim();
+    const s = pickSession(sessionId) || c.loadSession('default', new Date());
+    if (text) s.mission = text;
+    if (strictness) {
+      if (!c.STRICTNESS.includes(strictness)) return fail('strictness must be one of: ' + c.STRICTNESS.join(', '));
+      s.strictness = strictness;
+    }
+    s.missionCaptured = true;
+    c.saveSession(s);
+    c.appendLog({ session: s.id, kind: 'mission', detail: { mission: s.mission, strictness: s.strictness || c.loadConfig().strictness } });
+    console.log('Mission: ' + (s.mission || '(none)') + ' | strictness: ' + (s.strictness || c.loadConfig().strictness) + ' | session: ' + s.id);
+  },
+
+  check() {
+    const result = flag('--result');
+    const sessionId = flag('--session');
+    const risk = args.shift();
+    const note = args.join(' ').trim();
+    if (result && !['accepted', 'overridden'].includes(result)) return fail('--result must be accepted or overridden');
+    if (!risk && !result) return fail('usage: rabbit-hole check <drift|looping|fatigue> ["why"] [--result accepted|overridden]');
+    const s = pickSession(sessionId);
+    const row = risk
+      ? c.appendLog({ session: s ? s.id : null, kind: 'check', detail: { risk, note, result: result || null } })
+      : c.appendLog({ session: s ? s.id : null, kind: 'check-result', detail: { result } });
+    console.log('Logged ' + row.kind + (risk ? ' (' + risk + ')' : '') + (result ? ' as ' + result : '') + '.');
+  },
+
+  done() {
+    const sessionId = flag('--session');
+    const next = args.join(' ').trim();
+    const s = pickSession(sessionId);
+    if (!s) return fail('No session recorded yet. The hooks create one on the first prompt.');
+    const cfg = c.loadConfig();
+    const now = new Date();
+    const stats = c.sessionStats(s, c.readLog());
+    const mission = s.mission || cfg.mission || '(not declared)';
+    const duration = c.minutesBetween(new Date(s.startedAt), now);
+    s.endedAt = now.toISOString();
+    c.saveSession(s);
+    const line = '- ' + stamp(now) + ' | ' + mission + ' | next: ' + (next || 'not recorded');
+    c.ensureDir(c.home());
+    fs.appendFileSync(c.resumePath(), line + '\n');
+    c.appendLog({ session: s.id, kind: 'done', detail: { duration, next } });
+    console.log('Rabbit Hole session summary');
+    console.log('- Outcome: ' + mission);
+    console.log('- Duration: ' + fmtDuration(duration) + ' (' + s.promptCount + ' prompts, ' + s.toolCalls + ' tool calls)');
+    console.log('- Checks fired: ' + stats.checks + ' (accepted ' + stats.accepted + ', overridden ' + stats.overridden + ')');
+    console.log('- Loop trips: ' + stats.loops + ' | Topic switches: ' + s.topicSwitches);
+    console.log('- Parked: ' + stats.parked);
+    console.log('- Resume point written to ' + c.resumePath());
+    console.log('  ' + line);
+  },
+
+  log() {
+    const last = Number(flag('--last') || 20);
+    const rows = c.readLog();
+    const tail = rows.slice(-Math.max(1, last));
+    if (!tail.length) return console.log('No log entries yet (' + c.logPath() + ').');
+    for (const r of tail) {
+      const detail = r.detail ? ' ' + JSON.stringify(r.detail) : '';
+      console.log(r.ts + ' [' + (r.session || '-') + '] ' + r.kind + detail);
+    }
+  },
+
+  stats() {
+    const rows = c.readLog();
+    const all = c.sessionStats(null, rows);
+    const sessions = new Set(rows.map((r) => r.session).filter(Boolean));
+    console.log('Rabbit Hole stats (' + rows.length + ' log entries, ' + sessions.size + ' sessions)');
+    console.log('- Checks fired: ' + all.checks + ' (accepted ' + all.accepted + ', overridden ' + all.overridden + ', unrecorded ' + Math.max(0, all.checks - all.accepted - all.overridden) + ')');
+    console.log('- Parked: ' + all.parked);
+    console.log('- Trips by kind:');
+    const kinds = Object.keys(all.byKind).sort();
+    if (!kinds.length) console.log('  (none)');
+    for (const k of kinds) console.log('  ' + k + ': ' + all.byKind[k]);
+  },
+
+  config() {
+    const cfg = c.loadConfig();
+    console.log(JSON.stringify(Object.assign({}, cfg, { _home: c.home(), _configFile: c.configPath(), _configFileExists: fs.existsSync(c.configPath()) }), null, 2));
+  },
+
+  help() {
+    console.log([
+      'rabbit-hole <command>',
+      '',
+      '  park "<text>"                      append a tangent or idea to the parking lot',
+      '  mission "<outcome>" [--strictness strict|mid|loose]',
+      '                                     record the session outcome from the intake',
+      '  check <risk> ["why"] [--result accepted|overridden]',
+      '                                     log a checkpoint you spoke (risk: drift, looping, fatigue)',
+      '  check --result accepted|overridden log how the last checkpoint landed',
+      '  done ["next step"]                 session summary plus one resume line',
+      '  log [--last N]                     show recent log entries',
+      '  stats                              checks fired, accepted vs overridden, trips by kind',
+      '  config                             print the effective config',
+      '',
+      'State lives in $RABBIT_HOLE_HOME (default ~/.rabbit-hole).',
+    ].join('\n'));
+  },
+};
+
+function fail(msg) {
+  console.error(msg);
+  process.exitCode = 1;
+}
+
+if (!commands[cmd]) {
+  fail('Unknown command: ' + cmd);
+  commands.help();
+} else {
+  commands[cmd]();
+}
