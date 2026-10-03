@@ -75,3 +75,13 @@ CLI:   $SRC/bin/rabbit-hole  (add to PATH or alias it)
 Codex has no hooks, so the skill runs from its own instructions. Add this line to your AGENTS.md:
   Load the rabbit-hole skill (~/.codex/skills/rabbit-hole/SKILL.md) at the start of every session and keep it on for the whole session.
 MSG
+
+# Weekly self-update: on by default, one line turns it off. It fast-forwards
+# this clone from its origin, backs up your own files first and rolls back if
+# the self-test fails.
+echo ""
+if [ "${RABBIT_HOLE_SKIP_UPDATES:-0}" = "1" ]; then
+  echo "Weekly updates not scheduled (RABBIT_HOLE_SKIP_UPDATES=1). Later: node \"$SRC/scripts/self-update.js\" --register"
+else
+  node "$SRC/scripts/self-update.js" --register || echo "Weekly updates could not be scheduled. Try later: node \"$SRC/scripts/self-update.js\" --register"
+fi

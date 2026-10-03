@@ -4,7 +4,14 @@
   "description": "Always-on, advisory focus guard for Claude Code and Codex sessions: drift, loops, fatigue.",
   "license": "SEE LICENSE IN LICENSE",
   "private": true,
-  "bin": { "rabbit-hole": "bin/rabbit-hole" },
-  "scripts": { "test": "node --test tests/" },
-  "engines": { "node": ">=18" }
+  "bin": {
+    "rabbit-hole": "bin/rabbit-hole"
+  },
+  "scripts": {
+    "test": "node --test tests/",
+    "selftest": "node --test tests/"
+  },
+  "engines": {
+    "node": ">=18"
+  }
 }
