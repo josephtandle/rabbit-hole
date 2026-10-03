@@ -143,4 +143,4 @@ The thread-count signal with an intervention budget is an original rewrite of an
 
 ## License
 
-MIT. See `LICENSE`.
+All Sorted Personal Use License: use it for yourself, never sell or redistribute it. See LICENSE.
